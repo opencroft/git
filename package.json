@@ -1,0 +1,17 @@
+{
+  "name": "git",
+  "version": "0.1.0",
+  "license": "MIT",
+  "private": true,
+  "description": "Git App — clone repositories and manage worktrees for agents, review and commit in a full-page web git client over a remote terminal.",
+  "scripts": {
+    "test": "node --test server/*.test.ts"
+  },
+  "dependencies": {
+    "cn": "^0.4.0",
+    "lucide-react": "^1.14.0"
+  },
+  "peerDependencies": {
+    "@opencroft/client": "*"
+  }
+}

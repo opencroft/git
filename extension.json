@@ -1,0 +1,131 @@
+{
+  "id": "opencroft.git",
+  "name": "Git",
+  "version": "0.1.0",
+  "description": "Git App — clone repositories and manage worktrees for agents, review and commit in a full-page web git client over a remote terminal.",
+  "extensionDependencies": ["builtin.core"],
+  "provides": {
+    "apps": [
+      {
+        "slug": "git",
+        "title": "Git",
+        "description": "Browse a workspace of git repositories and review, commit and manage worktrees in a full-page git client.",
+        "icon": "GitBranch",
+        "parameters": [
+          {
+            "id": "terminal",
+            "label": "Terminal",
+            "required": true,
+            "description": "The terminal source the workspace lives on, as \"node-id/handle-id\"."
+          },
+          {
+            "id": "folder",
+            "label": "Workspace folder",
+            "required": true,
+            "placeholder": "/home/user/workspace",
+            "description": "The folder on that terminal holding the git repositories."
+          },
+          {
+            "id": "integrationBranches",
+            "label": "Integration branches",
+            "placeholder": "myrepo.git=main, other.git=develop",
+            "description": "Per repository, the branch its work merges into (\"repo=branch\" entries separated by commas or newlines). Worktree audits skip repositories without one rather than guess."
+          }
+        ],
+        "handles": [
+          {
+            "id": "worktree-terminal-",
+            "handleType": "builtin.core.terminal-context",
+            "label": "Worktree",
+            "dynamic": true
+          }
+        ],
+        "actions": [
+          {
+            "id": "listRepos",
+            "label": "List repositories",
+            "description": "List repositories in the workspace folder, each with its branch status and worktrees."
+          },
+          {
+            "id": "listWorktrees",
+            "label": "Audit worktrees",
+            "description": "Full worktree audit: per worktree, after a full-refspec fetch, the last commit, dirty file count, upstream ahead/behind, and a state — live, merged, unpublished, dirty or foreign — with the reason for it. Repositories with no configured integration branch are reported as skipped rather than audited against a guess. Omit repo to sweep every repo in the workspace.",
+            "inputSchema": {
+              "type": "object",
+              "properties": {
+                "repo": { "type": "string", "description": "Optional: limit the audit to one repository (e.g. myrepo.git). Omit to audit every repo." }
+              }
+            }
+          },
+          {
+            "id": "pruneWorktrees",
+            "label": "Prune merged worktrees",
+            "description": "Report which worktrees can be removed, and optionally remove them. Removable means BOTH the branch is gone from the remote AND its tip is an ancestor of the configured integration branch; anything else is kept and reported with its reason. Reports only unless apply is true.",
+            "inputSchema": {
+              "type": "object",
+              "properties": {
+                "repo": { "type": "string", "description": "Optional: limit to one repository (e.g. myrepo.git). Omit to sweep every configured repo." },
+                "apply": { "type": "boolean", "description": "Remove what the report lists as removable. Defaults to false: run it as a report and read the list first." }
+              }
+            }
+          },
+          {
+            "id": "cloneRepo",
+            "label": "Clone repository",
+            "description": "Clone a repository in bare mode (as <repo>.git) so worktrees can be attached to it.",
+            "execution": "async",
+            "inputSchema": {
+              "type": "object",
+              "required": ["url"],
+              "properties": {
+                "url": { "type": "string", "description": "Repository URL to clone." },
+                "name": { "type": "string", "description": "Optional bare directory name; defaults to <repo>.git derived from the URL." }
+              }
+            }
+          },
+          {
+            "id": "addWorktree",
+            "label": "Add worktree",
+            "description": "Add a worktree to a repository on a new branch named <name>. The checkout lands in <base>.worktrees/<name>. The new worktree has no git identity configured, and none is seeded: on a worktree of a shared bare clone, `git config user.*` writes to the repo's SHARED config and races with every other worktree of the same repo. Commit with per-commit env vars instead — GIT_AUTHOR_NAME/GIT_AUTHOR_EMAIL/GIT_COMMITTER_NAME/GIT_COMMITTER_EMAIL set on the `git commit` invocation itself — never `git config` in a linked worktree.",
+            "inputSchema": {
+              "type": "object",
+              "required": ["repo", "name"],
+              "properties": {
+                "repo": { "type": "string", "description": "Owning repository directory (e.g. myrepo.git)." },
+                "name": { "type": "string", "description": "Worktree name; also the checkout dir and the new branch name." },
+                "base": { "type": "string", "description": "Optional start point (branch/tag/commit) for the new branch. Defaults to the repo's HEAD." }
+              }
+            }
+          },
+          {
+            "id": "removeWorktree",
+            "label": "Remove worktree",
+            "description": "Remove a worktree and delete the branch it had checked out. The removal is recorded with who asked and why, appended as one line to .worktree-removals.log in the workspace folder — a removal otherwise leaves no trace of itself.",
+            "inputSchema": {
+              "type": "object",
+              "required": ["repo", "name", "reason"],
+              "properties": {
+                "repo": { "type": "string", "description": "Owning repository directory (e.g. myrepo.git)." },
+                "name": { "type": "string", "description": "Worktree name to remove." },
+                "reason": { "type": "string", "description": "Why it is being removed, in your own words (e.g. \"merged, pull request closed\"). Recorded against your name; the removal is refused without it." },
+                "force": { "type": "boolean", "description": "Force removal even if the worktree has local changes." }
+              }
+            }
+          },
+          {
+            "id": "removeRepo",
+            "label": "Remove repository",
+            "description": "Remove a cloned repository and any worktrees attached to it.",
+            "inputSchema": {
+              "type": "object",
+              "required": ["repo"],
+              "properties": {
+                "repo": { "type": "string", "description": "Repository directory to remove (e.g. myrepo.git)." }
+              }
+            }
+          }
+        ]
+      }
+    ]
+  }
+}
