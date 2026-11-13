@@ -6,9 +6,20 @@ export interface GitCommit {
   date: string
   parents: string[]
   branchNames: string[]
-  remoteBranches: string[]
+  remoteBranches: RemoteBranchRef[]
   tags?: string[]
   stashRef?: string
+}
+
+/**
+ * A remote-tracking branch: its full name (`team/fork/main`) and the remote and
+ * branch the server split it into (`team/fork`, `main`). Both remote and
+ * branch names may hold slashes, so the name is never split again here.
+ */
+export interface RemoteBranchRef {
+  name: string
+  remote: string
+  branch: string
 }
 
 export interface GitBranch {

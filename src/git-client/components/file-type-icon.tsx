@@ -1,3 +1,4 @@
+import { cn } from 'cn'
 import {
   File,
   FileArchive,
@@ -5,16 +6,31 @@ import {
   FileBox,
   FileCode,
   FileCog,
+  FileDigit,
   FileImage,
   FileSpreadsheet,
   FileText,
   FileVideoCamera,
+  Folder,
   type LucideIcon,
 } from 'lucide-react'
 
-type Category = 'code' | 'image' | 'text' | 'spreadsheet' | 'video' | 'audio' | 'model' | 'config' | 'archive'
+export type FileKind =
+  | 'folder'
+  | 'code'
+  | 'image'
+  | 'text'
+  | 'spreadsheet'
+  | 'video'
+  | 'audio'
+  | 'model'
+  | 'config'
+  | 'archive'
+  | 'binary'
+  | 'file'
 
-const CATEGORY_ICON: Record<Category, LucideIcon> = {
+const KIND_ICON: Record<FileKind, LucideIcon> = {
+  folder: Folder,
   code: FileCode,
   image: FileImage,
   text: FileText,
@@ -24,9 +40,26 @@ const CATEGORY_ICON: Record<Category, LucideIcon> = {
   model: FileBox,
   config: FileCog,
   archive: FileArchive,
+  binary: FileDigit,
+  file: File,
 }
 
-const EXT_CATEGORY: Record<string, Category> = {
+export const FILE_KIND_LABEL: Record<FileKind, string> = {
+  folder: 'Folder',
+  code: 'Code',
+  image: 'Image',
+  text: 'Text',
+  spreadsheet: 'Spreadsheet',
+  video: 'Video',
+  audio: 'Audio',
+  model: '3D model',
+  config: 'Config',
+  archive: 'Archive',
+  binary: 'Binary',
+  file: 'File',
+}
+
+const EXTENSION_KIND: Record<string, FileKind> = {
   ts: 'code',
   tsx: 'code',
   js: 'code',
@@ -130,9 +163,27 @@ const EXT_CATEGORY: Record<string, Category> = {
   '7z': 'archive',
   bz2: 'archive',
   xz: 'archive',
+  exe: 'binary',
+  dll: 'binary',
+  so: 'binary',
+  dylib: 'binary',
+  bin: 'binary',
+  o: 'binary',
+  a: 'binary',
+  wasm: 'binary',
+  class: 'binary',
+  pyc: 'binary',
+  msi: 'binary',
+  deb: 'binary',
+  rpm: 'binary',
+  apk: 'binary',
+  dmg: 'binary',
+  iso: 'binary',
+  img: 'binary',
+  elf: 'binary',
 }
 
-const NAME_CATEGORY: Record<string, Category> = {
+const NAME_KIND: Record<string, FileKind> = {
   dockerfile: 'code',
   makefile: 'code',
   readme: 'text',
@@ -146,26 +197,39 @@ const NAME_CATEGORY: Record<string, Category> = {
   '.eslintrc': 'config',
 }
 
-function categoryFromPath(path: string): Category {
-  const basename = path.split('/').pop() ?? path
-  const lower = basename.toLowerCase()
-
-  if (NAME_CATEGORY[lower]) {
-    return NAME_CATEGORY[lower]
-  }
-
-  const dot = lower.lastIndexOf('.')
+// The kind of a file from its name or path: a known whole name first
+// (Dockerfile, .gitignore), then a `.env.<stage>` file, then the extension.
+// Anything else is a plain `file`. Names are matched case-insensitively.
+export function fileKind(name: string, directory = false): FileKind {
+  if (directory) return 'folder'
+  const basename = (name.split('/').pop() ?? name).toLowerCase()
+  const byName = NAME_KIND[basename]
+  if (byName) return byName
+  if (basename.startsWith('.env.')) return 'config'
+  const dot = basename.lastIndexOf('.')
   if (dot > 0) {
-    const ext = lower.slice(dot + 1)
-    if (EXT_CATEGORY[ext]) {
-      return EXT_CATEGORY[ext]
-    }
+    const byExtension = EXTENSION_KIND[basename.slice(dot + 1)]
+    if (byExtension) return byExtension
   }
-
-  return 'code'
+  return 'file'
 }
 
-export function typeIcon(path: string) {
-  const Icon = CATEGORY_ICON[categoryFromPath(path)] ?? File
-  return <Icon className='size-4 shrink-0 text-muted-foreground' />
+const SIZE_CLASS = {
+  sm: 'size-4',
+  lg: 'size-6',
+} as const
+
+interface FileTypeIconProps {
+  // A file name or a path; only the last segment is read.
+  name: string
+  directory?: boolean
+  size?: keyof typeof SIZE_CLASS
+  className?: string
+}
+
+// The icon for one entry's kind (see fileKind). Decorative: the name beside
+// it is the accessible text.
+export function FileTypeIcon({ name, directory = false, size = 'sm', className }: FileTypeIconProps) {
+  const Icon = KIND_ICON[fileKind(name, directory)]
+  return <Icon className={cn(SIZE_CLASS[size], 'shrink-0 text-muted-foreground', className)} aria-hidden />
 }

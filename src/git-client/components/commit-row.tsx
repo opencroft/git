@@ -7,7 +7,7 @@ import { checkoutRemoteBranch, deleteRemoteBranch } from '../lib/actions/remotes
 import { stashApply, stashDrop, stashPop } from '../lib/actions/stashes'
 import { createTag, deleteTag } from '../lib/actions/tags'
 import { useGit } from '../lib/git-context'
-import type { CommitGraphData, GitCommit } from '../lib/types'
+import type { CommitGraphData, GitCommit, RemoteBranchRef } from '../lib/types'
 import { useGitAction } from '../lib/use-git-action'
 import {
   ContextMenu,
@@ -69,18 +69,14 @@ export function CommitRow({ commit, graphData, isHead, isSelected, dimmed, onSel
       return
     }
     if (commit.remoteBranches.length > 0) {
-      const rb = commit.remoteBranches[0]
-      const slash = rb.indexOf('/')
+      const { name, remote, branch } = commit.remoteBranches[0]
       const ok = await confirm({
         title: 'Track remote branch?',
-        description: `Create a local branch tracking ${rb} and check it out?`,
+        description: `Create a local branch tracking ${name} and check it out?`,
         confirmLabel: 'Create & checkout',
       })
       if (ok) {
-        await run(checkoutRemoteBranch, {
-          remote: rb.slice(0, slash),
-          branch: rb.slice(slash + 1),
-        })
+        await run(checkoutRemoteBranch, { remote, branch })
       }
       return
     }
@@ -108,14 +104,12 @@ export function CommitRow({ commit, graphData, isHead, isSelected, dimmed, onSel
     e.stopPropagation()
     void run(checkoutBranch, { name })
   }
-  const splitRemote = (rb: string) => {
-    const slash = rb.indexOf('/')
-    return { remote: rb.slice(0, slash), branch: rb.slice(slash + 1) }
-  }
-  const checkoutRemote = (rb: string) => (e: MouseEvent) => {
-    e.stopPropagation()
-    void run(checkoutRemoteBranch, splitRemote(rb))
-  }
+  const checkoutRemote =
+    ({ remote, branch }: RemoteBranchRef) =>
+    (e: MouseEvent) => {
+      e.stopPropagation()
+      void run(checkoutRemoteBranch, { remote, branch })
+    }
 
   const onDeleteBranch = (name: string, force: boolean) => async () => {
     const ok = await confirm({
@@ -127,18 +121,19 @@ export function CommitRow({ commit, graphData, isHead, isSelected, dimmed, onSel
       await run(deleteBranch, force ? { name, force: true } : { name })
     }
   }
-  const onDeleteRemoteBranch = (rb: string) => async () => {
-    const { remote, branch } = splitRemote(rb)
-    const ok = await confirm({
-      title: `Delete remote branch ${rb}?`,
-      description: `Deletes ${branch} on ${remote}.`,
-      danger: true,
-      confirmLabel: 'Delete',
-    })
-    if (ok) {
-      await run(deleteRemoteBranch, { remote, branch })
+  const onDeleteRemoteBranch =
+    ({ name, remote, branch }: RemoteBranchRef) =>
+    async () => {
+      const ok = await confirm({
+        title: `Delete remote branch ${name}?`,
+        description: `Deletes ${branch} on ${remote}.`,
+        danger: true,
+        confirmLabel: 'Delete',
+      })
+      if (ok) {
+        await run(deleteRemoteBranch, { remote, branch })
+      }
     }
-  }
   const onDeleteTag = (name: string) => async () => {
     const ok = await confirm({
       title: `Delete tag ${name}?`,
@@ -217,14 +212,15 @@ export function CommitRow({ commit, graphData, isHead, isSelected, dimmed, onSel
                 </BadgeMenu>
               ))}
               {commit.remoteBranches.map((rb) => {
-                const branchPart = rb.slice(rb.indexOf('/') + 1)
-                const collapsed = commit.branchNames.includes(branchPart)
+                const collapsed = commit.branchNames.includes(rb.branch)
                 return (
                   <BadgeMenu
-                    key={rb}
+                    key={rb.name}
                     items={
                       <>
-                        <ContextMenuItem onClick={() => run(checkoutRemoteBranch, splitRemote(rb))}>
+                        <ContextMenuItem
+                          onClick={() => run(checkoutRemoteBranch, { remote: rb.remote, branch: rb.branch })}
+                        >
                           Checkout (track)
                         </ContextMenuItem>
                         <ContextMenuSeparator />
@@ -236,14 +232,14 @@ export function CommitRow({ commit, graphData, isHead, isSelected, dimmed, onSel
                   >
                     {/* biome-ignore lint/a11y/noStaticElementInteractions: badge shortcut; row is keyboard-accessible */}
                     <span
-                      title={`Double-click to checkout ${rb}`}
+                      title={`Double-click to checkout ${rb.branch} from ${rb.remote}`}
                       onContextMenu={stopCtx}
                       onDoubleClick={checkoutRemote(rb)}
                       style={branchBadgeStyle}
                       className={`flex items-center gap-1 text-xs font-medium px-1.5 py-0 rounded border ${badgeText} whitespace-nowrap shrink-0 hover:ring-1 hover:ring-primary/40`}
                     >
                       <Cloud className='size-2.5 shrink-0' />
-                      {!collapsed && <span className='truncate'>{rb}</span>}
+                      {!collapsed && <span className='truncate'>{rb.name}</span>}
                     </span>
                   </BadgeMenu>
                 )

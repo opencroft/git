@@ -2,7 +2,7 @@
 // parser, apart from reaching the repository, so they are checkable against a
 // real git without a terminal behind them.
 
-import type { GitRemote } from '../../src/git-client/lib/types'
+import type { GitRemote, RemoteBranchRef } from '../../src/git-client/lib/types'
 import { SEP } from './field-separator.ts'
 
 const PREFIX = 'refs/remotes/'
@@ -29,7 +29,7 @@ export function parseRemoteList(raw: string): Map<string, string> {
  * can't be split at a slash; it goes to the longest remote name it starts
  * with, which also settles "team" against "team/fork".
  */
-export function remoteOf(name: string, remoteNames: Iterable<string>): string | undefined {
+function remoteOf(name: string, remoteNames: Iterable<string>): string | undefined {
   let found: string | undefined
   for (const remote of remoteNames) {
     if (name.startsWith(`${remote}/`) && remote.length > (found?.length ?? 0)) {
@@ -40,11 +40,21 @@ export function remoteOf(name: string, remoteNames: Iterable<string>): string | 
 }
 
 /**
+ * A remote-tracking branch's "<remote>/<branch>" name (the ref without
+ * `refs/remotes/`) split into its remote and its branch there. A ref left
+ * behind by a remote that isn't configured goes to its first segment,
+ * the only split left without the remote's name to go by.
+ */
+export function remoteBranchOf(name: string, remoteNames: Iterable<string>): RemoteBranchRef {
+  const remote = remoteOf(name, remoteNames) ?? name.split('/')[0]
+  return { name, remote, branch: name.slice(remote.length + 1) }
+}
+
+/**
  * The remote-tracking branches from `for-each-ref refs/remotes` in
- * REMOTE_REF_FORMAT, grouped under their remotes. Each branch keeps its
- * "<remote>/<branch>" name. A ref left behind by a remote that is no longer
- * configured is grouped under its first segment, with no URL, so it still
- * shows.
+ * REMOTE_REF_FORMAT, grouped under their remotes as remoteBranchOf splits
+ * them. Each branch keeps its "<remote>/<branch>" name. A ref of a remote that
+ * isn't configured has no URL, and still shows.
  */
 export function parseRemotes(raw: string, urls: Map<string, string>): GitRemote[] {
   const byName = new Map<string, GitRemote>()
@@ -54,7 +64,7 @@ export function parseRemotes(raw: string, urls: Map<string, string>): GitRemote[
       continue
     }
     const name = ref.slice(PREFIX.length)
-    const remote = remoteOf(name, urls.keys()) ?? name.split('/')[0]
+    const { remote } = remoteBranchOf(name, urls.keys())
     let entry = byName.get(remote)
     if (!entry) {
       entry = { name: remote, url: urls.get(remote) ?? '', branches: [] }

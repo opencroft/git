@@ -1,7 +1,8 @@
 import type { FileChange, GitCommit, GitData, GitStash, GitSubmodule, GitTag } from '../../src/git-client/lib/types'
 import { action } from './action'
 import { BRANCH_FORMAT, parseBranches } from './branch-refs'
-import { parseRemoteList, parseRemotes, REMOTE_REF_FORMAT, remoteOf } from './remote-refs'
+import { LOG_FORMAT_ARGS, parseCommits } from './commit-log'
+import { parseRemoteList, parseRemotes, REMOTE_REF_FORMAT } from './remote-refs'
 import { openRepo, SEP, trustDirectory } from './run-git'
 
 interface LineStat {
@@ -12,51 +13,6 @@ interface LineStat {
 interface SplitChanges {
   staged: FileChange[]
   unstaged: FileChange[]
-}
-
-function parseCommits(log: string, remotes: Iterable<string>): GitCommit[] {
-  if (!log) {
-    return []
-  }
-  return log.split('\n').map((line) => {
-    const [hash, shortHash, message, author, date, parentStr, refs] = line.split(SEP)
-    const branchNames: string[] = []
-    const remoteBranches: string[] = []
-    const tags: string[] = []
-    for (const entry of (refs ?? '').split(', ')) {
-      const ref = entry.trim()
-      if (!ref) {
-        continue
-      }
-      if (ref.startsWith('tag: ')) {
-        tags.push(ref.slice(5))
-        continue
-      }
-      const name = ref.replace('HEAD -> ', '')
-      if (name === 'HEAD' || name.startsWith('refs/') || name.endsWith('/HEAD')) {
-        continue
-      }
-      if (remoteOf(name, remotes)) {
-        remoteBranches.push(name)
-        continue
-      }
-      branchNames.push(name)
-    }
-    const commit: GitCommit = {
-      hash,
-      shortHash,
-      message,
-      author,
-      date,
-      parents: parentStr ? parentStr.split(' ') : [],
-      branchNames,
-      remoteBranches,
-    }
-    if (tags.length > 0) {
-      commit.tags = tags
-    }
-    return commit
-  })
 }
 
 function parseTags(raw: string): GitTag[] {
@@ -206,15 +162,7 @@ export const getGitData = action(
 
       const remoteUrls = parseRemoteList(await run(['remote', '-v']))
 
-      const log = await run([
-        'log',
-        'HEAD',
-        '--branches',
-        '--remotes',
-        '--tags',
-        '--topo-order',
-        `--pretty=format:%H${SEP}%h${SEP}%s${SEP}%an${SEP}%aI${SEP}%P${SEP}%D`,
-      ])
+      const log = await run(['log', 'HEAD', '--branches', '--remotes', '--tags', '--topo-order', ...LOG_FORMAT_ARGS])
 
       const changes = parseChanges(
         await run(['status', '--porcelain=v1', '--untracked-files=all']),

@@ -10,7 +10,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import test from 'node:test'
 
-import { pull, pullArgs, pushArgs, type RunGit } from './gitui/remote-args.ts'
+import { checkoutRemote, pull, pullArgs, pushArgs, type RunGit } from './gitui/remote-args.ts'
 
 test('pull names the merge strategy either way', () => {
   assert.deepEqual(pullArgs({ remote: 'origin', branch: 'main' }), ['pull', '--no-rebase', '--', 'origin', 'main'])
@@ -173,4 +173,32 @@ test('a mapped push creates the remote branch under its new name', { skip }, (t)
   commit(ours, 'topic.txt', 'topic\n')
   git(ours, pushArgs({ remote: 'origin', branch: 'topic', remoteBranch: 'review/topic' }))
   assert.match(git(ours, ['ls-remote', '--heads', 'origin']), /refs\/heads\/review\/topic$/m)
+})
+
+test('checking out a remote branch tracks it under its name on the remote, whatever slashes the remote name holds', {
+  skip,
+}, async (t) => {
+  const { ours } = setup(t)
+  const url = git(ours, ['remote', 'get-url', 'origin']).trim()
+  // Remote "team"'s fetch refspec also covers refs/remotes/team/fork/*.
+  git(ours, ['remote', 'add', 'team', url])
+  git(ours, ['remote', 'add', 'team/fork', url])
+  git(ours, ['push', '-q', 'team/fork', 'main:feature/x'])
+  git(ours, ['fetch', '-q', '--all'])
+  // Shares the remote-tracking branch's short name "team/fork/feature/x".
+  git(ours, ['branch', 'team/fork/feature/x'])
+
+  await checkoutRemote(runner(ours), { remote: 'team/fork', branch: 'feature/x' })
+  assert.equal(git(ours, ['branch', '--show-current']).trim(), 'feature/x')
+  assert.equal(git(ours, ['config', 'branch.feature/x.remote']).trim(), 'team/fork')
+  assert.equal(git(ours, ['config', 'branch.feature/x.merge']).trim(), 'refs/heads/feature/x')
+  assert.equal(
+    git(ours, ['rev-parse', 'feature/x@{upstream}']),
+    git(ours, ['rev-parse', 'refs/remotes/team/fork/feature/x']),
+  )
+
+  await checkoutRemote(runner(ours), { remote: 'team/fork', branch: 'feature/x', localName: 'mine' })
+  assert.equal(git(ours, ['branch', '--show-current']).trim(), 'mine')
+  assert.equal(git(ours, ['config', 'branch.mine.remote']).trim(), 'team/fork')
+  assert.equal(git(ours, ['config', 'branch.mine.merge']).trim(), 'refs/heads/feature/x')
 })

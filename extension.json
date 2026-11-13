@@ -1,7 +1,7 @@
 {
   "id": "opencroft.git",
   "name": "Git",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Git App — clone repositories and manage worktrees for agents, review and commit in a full-page web git client over a remote terminal.",
   "extensionDependencies": ["builtin.core"],
   "provides": {

@@ -1,5 +1,5 @@
 import { action } from './action'
-import { type PullArgsInput, type PushArgsInput, pull, pushArgs } from './remote-args'
+import { checkoutRemote, type PullArgsInput, type PushArgsInput, pull, pushArgs } from './remote-args'
 import { openRepo } from './run-git'
 
 function assertRemoteName(name: string, label = 'name'): string {
@@ -246,13 +246,6 @@ export const checkoutRemoteBranch = action(
   },
   async ({ data }) => {
     const { run } = await openRepo(data)
-    const remote = data.remote.trim()
-    const branch = data.branch.trim()
-    const tracking = `${remote}/${branch}`
-    if (data.localName) {
-      await run(['checkout', '-b', data.localName.trim(), '--track', tracking])
-    } else {
-      await run(['checkout', '--track', tracking])
-    }
+    await checkoutRemote(run, data)
   },
 )

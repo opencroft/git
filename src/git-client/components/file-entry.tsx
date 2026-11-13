@@ -1,13 +1,13 @@
 import { SquareMinus, SquarePen, SquarePlus } from 'lucide-react'
 
 import { addToGitignore, createPatch, discardFiles } from '../lib/actions/changes'
-import { typeIcon } from '../lib/file-type-icon'
 import { useGit } from '../lib/git-context'
 import { stageFiles, unstageFiles } from '../lib/git-data'
 import type { FileChange, SelectModifiers } from '../lib/types'
 import { useGitAction } from '../lib/use-git-action'
 import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuSeparator, ContextMenuTrigger } from '../ui'
 import { EntryRow } from './entry-row'
+import { FileTypeIcon } from './file-type-icon'
 import { useGitDialogs } from './git-dialogs'
 
 interface FileEntryProps {
@@ -98,7 +98,7 @@ export function FileEntry({
           icon={
             <>
               {statusIcon(file.status)}
-              {typeIcon(file.path)}
+              <FileTypeIcon name={file.path} />
             </>
           }
           depth={depth}

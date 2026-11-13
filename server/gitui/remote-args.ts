@@ -51,6 +51,35 @@ export async function pull(run: RunGit, data: PullArgsInput): Promise<void> {
   }
 }
 
+export interface CheckoutRemoteArgsInput {
+  remote: string
+  /** The branch's name on the remote. */
+  branch: string
+  /** The local branch to create; the branch's name on the remote when absent. */
+  localName?: string
+}
+
+/**
+ * Creates a local branch from a remote branch, checks it out and sets it to
+ * track that branch. git's own `--track` can't be left to do either part once
+ * a remote name holds a slash: it names the new branch by dropping the
+ * remote-tracking name's first segment ("team/fork/main" becomes "fork/main"),
+ * and it finds the remote through the fetch refspecs, where with remotes
+ * "team" and "team/fork" both claim `refs/remotes/team/fork/*` and git refuses
+ * as ambiguous. So the name is always given and the upstream is written as
+ * the remote and branch the caller named. The start point is the full ref, so
+ * a local branch that shares the remote-tracking branch's short name doesn't
+ * make it ambiguous.
+ */
+export async function checkoutRemote(run: RunGit, data: CheckoutRemoteArgsInput): Promise<void> {
+  const remote = data.remote.trim()
+  const branch = data.branch.trim()
+  const localName = data.localName?.trim() || branch
+  await run(['checkout', '-b', localName, '--no-track', `refs/remotes/${remote}/${branch}`])
+  await run(['config', `branch.${localName}.remote`, remote])
+  await run(['config', `branch.${localName}.merge`, `refs/heads/${branch}`])
+}
+
 export interface PushArgsInput {
   remote?: string
   /** The local branch to push. */

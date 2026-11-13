@@ -98,7 +98,7 @@ export function useGitStore(data: GitData, initial?: GitStoreInitial) {
   const visibleCommits = useMemo(() => {
     const shown = [...visibilityMap.entries()].filter(([, m]) => m === 'shown')
     const hidden = [...visibilityMap.entries()].filter(([, m]) => m === 'hidden')
-    const refsOf = (c: (typeof commits)[number]) => [...c.branchNames, ...c.remoteBranches]
+    const refsOf = (c: (typeof commits)[number]) => [...c.branchNames, ...c.remoteBranches.map((rb) => rb.name)]
 
     if (shown.length > 0) {
       const shownNames = new Set(shown.map(([n]) => n))
