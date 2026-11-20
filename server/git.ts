@@ -4,8 +4,21 @@ import { joinWorkspacePath, normalizeWorkspaceFolder, repoBase, worktreeHandleId
 import { classifyWorktree, type WorktreeFacts, type WorktreeState } from './classify-worktree'
 import { parseTarget } from './gitui/run-git'
 import { removalRecordLine } from './removal-record'
+import {
+  createRepoName,
+  createRepoScript,
+  DEFAULT_INITIAL_BRANCH,
+  deleteRepoScript,
+  deletionRefusal,
+  GIT,
+  inspectRepoScript,
+  parseRepoInspection,
+  type RepoDeletionReport,
+  safeComponent,
+  shellQuote,
+} from './repo-lifecycle'
 
-export type { WorktreeFacts, WorktreeState }
+export type { RepoDeletionReport, WorktreeFacts, WorktreeState }
 export { classifyWorktree }
 
 interface ResolvedGitWorkspace {
@@ -66,19 +79,6 @@ async function resolveGitWorkspace(ref: GitWorkspaceRef): Promise<ResolvedGitWor
   }
 }
 
-function shellQuote(s: string): string {
-  return `'${s.replace(/'/g, `'\\''`)}'`
-}
-
-/** A single path component (repo dir or worktree name) safe to splice into a path. */
-function safeComponent(value: string, label: string): string {
-  const name = value.trim()
-  if (!name || name === '.' || name === '..' || name.includes('/') || name.includes('\\') || name.includes('\0')) {
-    throw new Error(`Invalid ${label}: ${JSON.stringify(value)}`)
-  }
-  return name
-}
-
 function worktreesDir(repo: string): string {
   return `${repoBase(repo)}.worktrees`
 }
@@ -106,8 +106,6 @@ export interface RepoInfo {
 }
 
 export type GitListReposParams = GitWorkspaceRef
-
-const GIT = `git -c safe.directory='*'`
 
 // Emits, per repo in the workspace folder, one REPO line followed by one WT line
 // per linked worktree. Worktree change counts are computed per worktree. Output
@@ -729,24 +727,87 @@ export async function gitRemoveWorktree(params: GitRemoveWorktreeParams): Promis
   await terminal.exec(context, script)
 }
 
-// ── Remove repo ───────────────────────────────────────────────────────────
+// ── Create repo ───────────────────────────────────────────────────────────
 
-export interface GitRemoveRepoParams extends GitWorkspaceRef {
+export interface GitCreateRepoParams extends GitWorkspaceRef {
+  /** Directory name, taken as given: `myrepo.git` for a bare repository by convention, not by rule. */
+  name: string
+  /** Defaults to true, as a clone does: worktrees attach to a bare repository. */
+  bare?: boolean
+  /** Defaults to `main`. */
+  initialBranch?: string
+}
+
+export interface CreatedRepo {
+  name: string
+  bare: boolean
+  initialBranch: string
+}
+
+/** Initialise a new, empty repository in the workspace. A name already taken is refused. */
+export async function gitCreateRepo(params: GitCreateRepoParams): Promise<CreatedRepo> {
+  const { context, folder } = await resolveGitWorkspace(params)
+  const name = createRepoName(params.name ?? '')
+  const bare = params.bare !== false
+  const initialBranch = params.initialBranch?.trim() || DEFAULT_INITIAL_BRANCH
+  await terminal.exec(context, createRepoScript({ folder, name, bare, initialBranch }))
+  return { name, bare, initialBranch }
+}
+
+// ── Delete repo ───────────────────────────────────────────────────────────
+
+export interface GitInspectRepoParams extends GitWorkspaceRef {
   repo: string
 }
 
-/** Remove a cloned repository and any worktrees attached to it. */
-export async function gitRemoveRepo(params: GitRemoveRepoParams): Promise<void> {
+/**
+ * What deleting a repository would lose: its worktrees, and every uncommitted
+ * file, unpushed commit or unreachable remote found in them. Changes nothing.
+ */
+export async function gitInspectRepoDeletion(params: GitInspectRepoParams): Promise<RepoDeletionReport> {
   const { context, folder } = await resolveGitWorkspace(params)
   const repo = safeComponent(params.repo, 'repository')
-  const repoPath = shellQuote(joinWorkspacePath(folder, repo))
-  const wtPath = shellQuote(joinWorkspacePath(folder, worktreesDir(repo)))
-  // Guard: only delete a path that is actually a git repository.
-  const script = [
-    `if [ -z "$(${GIT} -C ${repoPath} rev-parse --git-dir 2>/dev/null)" ]; then`,
-    `  echo "Not a git repository: ${repo}" >&2; exit 1`,
-    'fi',
-    `rm -rf ${repoPath} ${wtPath}`,
-  ].join('\n')
-  await terminal.exec(context, script)
+  return parseRepoInspection(await terminal.exec(context, inspectRepoScript(folder, repo)), folder, repo)
+}
+
+export interface GitDeleteRepoParams extends GitInspectRepoParams {
+  /** Delete even when the inspection found work that would be lost. */
+  force?: boolean
+}
+
+export interface DeletedRepo {
+  repo: string
+  /** Workspace-relative paths that were deleted: the repository, then its worktrees. */
+  removed: string[]
+  /** Worktrees registered outside the workspace, left on disk. */
+  leftBehind: string[]
+  /** What `force` overrode; empty when nothing had to be. */
+  overridden: string[]
+}
+
+/**
+ * Delete a repository and its worktrees from the workspace. Remotes are only
+ * read, never changed.
+ *
+ * The inspection runs again here rather than trusting one a caller made
+ * earlier: work written after a confirm dialog opened still stops a delete
+ * that was not forced. This is the one delete behind both doors (the App
+ * action and the view's `invoke` surface), so the guard holds for each.
+ */
+export async function gitDeleteRepo(params: GitDeleteRepoParams): Promise<DeletedRepo> {
+  const { context, folder } = await resolveGitWorkspace(params)
+  const repo = safeComponent(params.repo, 'repository')
+  const report = parseRepoInspection(await terminal.exec(context, inspectRepoScript(folder, repo)), folder, repo)
+  const force = params.force === true
+  const refusal = deletionRefusal(report, force)
+  if (refusal) {
+    throw new Error(refusal)
+  }
+  await terminal.exec(context, deleteRepoScript(folder, report))
+  return {
+    repo,
+    removed: [repo, ...report.worktrees.filter((w) => w.removable).map((w) => w.path)],
+    leftBehind: report.worktrees.filter((w) => !w.removable).map((w) => w.path),
+    overridden: force ? report.blockers : [],
+  }
 }

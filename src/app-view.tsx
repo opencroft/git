@@ -1,13 +1,12 @@
 import { invoke } from '@opencroft/client/actions'
 import type { AppComponentProps } from '@opencroft/client/app'
-import { ChatDock, SelectionProvider, useSelection } from '@opencroft/client/chat'
+import { ChatDock } from '@opencroft/client/chat'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { toast } from 'sonner'
 
-import { isWorktreeTarget, joinWorkspacePath, worktreeHandleForRelPath, worktreeRelPath } from '../worktreeContext'
+import { isWorktreeTarget, joinWorkspacePath, worktreeHandleForRelPath } from '../worktreeContext'
 import { GitClient } from './git-client/git-client'
-import { type CodeSelection, CodeSelectionProvider } from './git-client/lib/code-selection'
-import { GitRepoList, type Repo } from './workspace/repo-list'
+import { GitRepoList, type Repo, type RepoDeletionCheck } from './workspace/repo-list'
 
 /**
  * How this app addresses its workspace in the `git.*` server actions: the Git
@@ -137,57 +136,6 @@ function writeDeepLink(patch: Partial<Pick<DeepLink, 'repository' | 'terminal' |
   window.history.replaceState(null, '', url)
 }
 
-// Publishes whatever the reader currently has open as the scope's selection,
-// so the chat beside it can carry that context into a message. Renders
-// nothing -- it is wiring, and it lives in its own component because the hook
-// has to run inside the provider.
-function GitSelectionBridge({
-  repository,
-  file,
-  line,
-  code,
-}: {
-  repository: string
-  file: string
-  line?: number
-  code: CodeSelection | null
-}) {
-  const { setSelection, clearSelection } = useSelection()
-
-  // Highlighted code wins over the bare file: it is the more specific thing
-  // the reader is pointing at, and it carries the lines to quote.
-  const codeForFile = code && code.path === file ? code : null
-  const name = file.split('/').pop() ?? file
-  const label = codeForFile
-    ? `${name}:${codeForFile.startLine} · ${codeForFile.endLine - codeForFile.startLine + 1} line${codeForFile.endLine === codeForFile.startLine ? '' : 's'}`
-    : name
-  const content = !file
-    ? ''
-    : codeForFile
-      ? [
-          `Repository: ${repository || 'unknown'}`,
-          `File: ${file}`,
-          codeForFile.startLine === codeForFile.endLine
-            ? `Lines: ${codeForFile.startLine}`
-            : `Lines: ${codeForFile.startLine}-${codeForFile.endLine}`,
-          '',
-          codeForFile.text,
-        ].join('\n')
-      : [`Repository: ${repository || 'unknown'}`, `File: ${line ? `${file}:${line}` : file}`].join('\n')
-
-  // Keyed on the VALUES, not the objects: they are rebuilt every render, and
-  // republishing re-arms passing, which would undo a reader who had just
-  // switched it off.
-  useEffect(() => {
-    if (!file) {
-      clearSelection()
-      return
-    }
-    setSelection({ label, content })
-  }, [file, label, content, setSelection, clearSelection])
-  return null
-}
-
 /** The workspace's front page: its repositories and worktrees, with clone and open. */
 function WorkspaceBrowser({
   ws,
@@ -235,6 +183,20 @@ function WorkspaceBrowser({
     [ws, refresh],
   )
 
+  // Asked when a delete confirm opens. Its failure is the confirm's to show,
+  // so it is passed back rather than toasted here. The confirm lists the
+  // worktrees that are deleted; one kept in place is already among the blockers.
+  const checkDelete = useCallback(
+    async (repo: Repo): Promise<RepoDeletionCheck> => {
+      const report = (await invoke('git.inspectRepoDeletion', { ...ws, repo: repo.name })) as {
+        worktrees: { name: string; branch: string; removable: boolean }[]
+        blockers: string[]
+      }
+      return { worktrees: report.worktrees.filter((w) => w.removable), blockers: report.blockers }
+    },
+    [ws],
+  )
+
   return (
     <GitRepoList
       repos={repos}
@@ -250,7 +212,18 @@ function WorkspaceBrowser({
           'Clone failed',
         )
       }
-      onRemoveRepo={(repo) => run('git.removeRepo', { repo: repo.name }, `Removed ${repo.name}`, 'Remove failed')}
+      onCreateRepo={(repo) =>
+        run(
+          'git.createRepo',
+          { name: repo.name, bare: repo.bare, initialBranch: repo.initialBranch },
+          `Created ${repo.name}`,
+          'Create failed',
+        )
+      }
+      onCheckDelete={checkDelete}
+      onDeleteRepo={(repo, { force }) =>
+        run('git.deleteRepo', { repo: repo.name, force }, `Deleted ${repo.name}`, 'Delete failed')
+      }
       onAddWorktree={(repo, worktree) =>
         run(
           'git.addWorktree',
@@ -289,16 +262,12 @@ export function GitAppView({ instanceId, spaceSlug, params }: AppComponentProps)
   // The link wins over the instance's own terminal, so a shared view opens on
   // the machine it describes rather than on this workspace's.
   const [terminal, setTerminal] = useState(initial.terminal || target)
-  const [file, setFile] = useState(initial.file)
-  // The lines the reader has highlighted in the editor. Dropped when the file
-  // changes -- lines from a file you have left are not context for the one you
-  // are looking at -- but NOT when the highlight itself collapses, which is
-  // what clicking into the composer does.
-  const [code, setCode] = useState<CodeSelection | null>(null)
-  // biome-ignore lint/correctness/useExhaustiveDependencies: runs when the file changes, which is the point; it reads nothing of the file
-  useEffect(() => {
-    setCode(null)
-  }, [file])
+  // The linked file belongs to the place the link opened; any other place the
+  // reader moves to opens with no file.
+  const [linkedFile, setLinkedFile] = useState<{ path: string; line?: number }>({
+    path: initial.file,
+    line: initial.line,
+  })
   const [remembered, setRemembered] = useState(() => readLastPlace(key))
 
   const remember = useCallback(
@@ -316,7 +285,7 @@ export function GitAppView({ instanceId, spaceSlug, params }: AppComponentProps)
     (place: LastPlace) => {
       setRepository(place.repository)
       setTerminal(place.terminal)
-      setFile('')
+      setLinkedFile({ path: '' })
       writeDeepLink({ repository: place.repository, terminal: place.terminal, file: '' })
       remember(place)
     },
@@ -330,7 +299,7 @@ export function GitAppView({ instanceId, spaceSlug, params }: AppComponentProps)
   const backToList = useCallback(() => {
     setRepository('')
     setTerminal(target)
-    setFile('')
+    setLinkedFile({ path: '' })
     writeDeepLink({ repository: '', terminal: '', file: '' })
   }, [target])
 
@@ -365,7 +334,6 @@ export function GitAppView({ instanceId, spaceSlug, params }: AppComponentProps)
   }, [remembered, openAt])
 
   const onFileChange = useCallback((next?: string) => {
-    setFile(next ?? '')
     writeDeepLink({ file: next ?? '' })
   }, [])
 
@@ -373,43 +341,29 @@ export function GitAppView({ instanceId, spaceSlug, params }: AppComponentProps)
   // handle carries the location with no path beside it.
   const clientOpen = Boolean(repository) || isWorktreeTarget(terminal)
 
-  // What to CALL the open repository, for the chat beside it. A worktree
-  // addressed by handle has no path to quote, so its checkout path is read back
-  // out of the handle rather than left as "unknown".
-  const opened = repository || worktreeRelPath(terminal.slice(terminal.indexOf('/') + 1)) || ''
-
   const body = clientOpen ? (
-    // Lets the editor several levels down report a selection without every
-    // component in between carrying a prop for it.
-    <CodeSelectionProvider onSelection={setCode}>
-      <GitClient
-        folder={repository}
-        target={terminal}
-        onPlaceChange={changePlace}
-        onBookmarks={backToList}
-        initialFilePath={initial.file || undefined}
-        initialFileLine={initial.line}
-        onFileChange={onFileChange}
-      />
-    </CodeSelectionProvider>
+    <GitClient
+      folder={repository}
+      target={terminal}
+      onPlaceChange={changePlace}
+      onBookmarks={backToList}
+      initialFilePath={linkedFile.path || undefined}
+      initialFileLine={linkedFile.line}
+      onFileChange={onFileChange}
+    />
   ) : (
     <WorkspaceBrowser ws={ws} onOpen={openFromList} onOpenClient={remembered ? openClient : undefined} />
   )
 
   // The chat's whole chrome -- launcher, docking, floating window, mobile
   // cover -- is the host's ChatDock, the same surface the space canvas mounts.
-  // The app contributes only what is its own: the selection bridge and which
-  // thread is this instance's default.
-  //
-  // The whole surface is one selection scope -- leaving the app unmounts the
-  // provider and the selection goes with it. The instance's own thread by
-  // default: the conversation is about this workspace.
+  // The app contributes only which thread is this instance's default: the
+  // instance's own, since the conversation is about this workspace. The
+  // selection scope is the host's, around the whole App page; the client
+  // publishes into it what it has open.
   return (
-    <SelectionProvider>
-      <ChatDock space={spaceSlug} id={`git-${instanceId}`} title={`Chat · ${spaceSlug}`}>
-        <GitSelectionBridge repository={opened} file={file} line={initial.line} code={code} />
-        <div className='min-h-0 min-w-0 flex-1 overflow-hidden'>{body}</div>
-      </ChatDock>
-    </SelectionProvider>
+    <ChatDock space={spaceSlug} id={`git-${instanceId}`} title={`Chat · ${spaceSlug}`}>
+      <div className='min-h-0 min-w-0 flex-1 overflow-hidden'>{body}</div>
+    </ChatDock>
   )
 }

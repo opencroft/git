@@ -1,6 +1,8 @@
 import type { CodeEditorOnMount } from '@opencroft/client/code'
 import { createContext, type ReactNode, useContext, useMemo } from 'react'
 
+import { lastSelectedLine } from './selection'
+
 export interface CodeSelection {
   path: string
   /** 1-based, inclusive. */
@@ -13,14 +15,12 @@ export interface CodeSelection {
  * Where a code selection is reported to.
  *
  * A context rather than props: the editor that knows the selection sits several
- * components below the app view that wants it (app view -> client -> commit
- * panel/details -> diff viewer -> editor), and it is rendered from two
- * different call sites. Threading a callback through all of that would put a
- * prop nobody in between has any use for into every one of them.
+ * components below the client body that publishes it (client body -> commit
+ * panel -> diff viewer -> editor). Threading a callback through all of that
+ * would put a prop nobody in between has any use for into every one of them.
  *
  * Null when nothing is listening, so the editor works unchanged outside a
- * provider — the git client is also mounted as a command-mode overlay, which
- * has no chat beside it.
+ * provider.
  */
 const CodeSelectionContext = createContext<((selection: CodeSelection) => void) | null>(null)
 
@@ -69,7 +69,7 @@ export function useCodeSelectionMount(path: string): CodeEditorOnMount | undefin
         if (!text.trim()) {
           return
         }
-        report({ path, startLine: selection.startLineNumber, endLine: selection.endLineNumber, text })
+        report({ path, startLine: selection.startLineNumber, endLine: lastSelectedLine(selection), text })
       })
       mounted.onDidDispose(() => disposable.dispose())
     }

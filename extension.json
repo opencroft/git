@@ -1,7 +1,7 @@
 {
   "id": "opencroft.git",
   "name": "Git",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Git App — clone repositories and manage worktrees for agents, review and commit in a full-page web git client over a remote terminal.",
   "extensionDependencies": ["builtin.core"],
   "provides": {
@@ -134,14 +134,38 @@
             }
           },
           {
-            "id": "removeRepo",
-            "label": "Remove repository",
-            "description": "Remove a cloned repository and any worktrees attached to it.",
+            "id": "createRepo",
+            "label": "Create repository",
+            "description": "Create a new, empty repository in the workspace folder, bare by default as clones are. A name already taken is refused, and so is one sharing a worktrees folder with an existing repository (\"x\" beside \"x.git\"). Answers the name, whether it is bare, and its initial branch.",
             "inputSchema": {
               "type": "object",
-              "required": ["repo"],
+              "required": ["name"],
               "properties": {
-                "repo": { "type": "string", "description": "Repository directory to remove (e.g. myrepo.git)." }
+                "name": {
+                  "type": "string",
+                  "description": "Directory name, used exactly as given (e.g. myrepo.git for a bare repository)."
+                },
+                "bare": {
+                  "type": "boolean",
+                  "description": "Create without a working tree, so worktrees can be attached to it. Defaults to true; pass false for a repository with its own working tree."
+                },
+                "initialBranch": { "type": "string", "description": "The branch HEAD starts on. Defaults to main." }
+              }
+            }
+          },
+          {
+            "id": "deleteRepo",
+            "label": "Delete repository",
+            "description": "Delete a repository and its worktrees from the workspace folder. Remotes are only read (ls-remote), never changed. Refused, with the list of what would be lost, when a worktree or the working tree has uncommitted changes, a branch or detached worktree HEAD has commits no remote has, a remote cannot be reached to check, a step of the check itself fails, or a worktree is registered outside the workspace — unless force is true. Answers what was removed, what was left on disk, and what force overrode.",
+            "inputSchema": {
+              "type": "object",
+              "required": ["name"],
+              "properties": {
+                "name": { "type": "string", "description": "Repository directory to delete (e.g. myrepo.git)." },
+                "force": {
+                  "type": "boolean",
+                  "description": "Delete even though work would be lost. Only exactly true counts; read the refusal first."
+                }
               }
             }
           }

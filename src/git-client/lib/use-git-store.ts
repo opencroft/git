@@ -1,6 +1,7 @@
-import { useMemo, useState } from 'react'
+import { useCallback, useMemo, useState } from 'react'
 
 import { computeAllGraphData } from './graph-utils'
+import { openInClient } from './selection'
 import type { ChangesView, GitData, SidebarView, VisibilityMode } from './types'
 
 export interface GitStoreInitial {
@@ -21,6 +22,18 @@ export function useGitStore(data: GitData, initial?: GitStoreInitial) {
   // view), so the panel shows that commit's diff read-only instead of the
   // working-tree/staged one.
   const [selectedCommitHash, setSelectedCommitHash] = useState<string>()
+  // The file open in the history's commit details. It belongs to the selected
+  // commit, so selecting another commit closes it.
+  const [selectedCommitFilePath, setSelectedCommitFilePath] = useState<string>()
+  const selectCommit = useCallback(
+    (hash: string) => {
+      if (hash !== selectedHash) {
+        setSelectedCommitFilePath(undefined)
+      }
+      setSelectedHash(hash)
+    },
+    [selectedHash],
+  )
 
   const { branches, remotes, tags, stashes, submodules, commits } = data
   const { changedFiles, stagedFiles, files } = data
@@ -129,6 +142,19 @@ export function useGitStore(data: GitData, initial?: GitStoreInitial) {
 
   const graphData = useMemo(() => computeAllGraphData(visibleCommits), [visibleCommits])
 
+  const open = useMemo(
+    () =>
+      openInClient({
+        sidebarView,
+        selectedCommit,
+        selectedCommitFilePath,
+        selectedFilePath,
+        selectedCommitHash,
+        commits,
+      }),
+    [sidebarView, selectedCommit, selectedCommitFilePath, selectedFilePath, selectedCommitHash, commits],
+  )
+
   const filteredBranches = useMemo(
     () => (filterText ? branches.filter((b) => b.name.toLowerCase().includes(filterText.toLowerCase())) : branches),
     [filterText, branches],
@@ -198,7 +224,9 @@ export function useGitStore(data: GitData, initial?: GitStoreInitial) {
     toggleFolderBlacklist,
     selectedHash,
     selectedCommit,
-    selectCommit: setSelectedHash,
+    selectCommit,
+    selectedCommitFilePath,
+    selectCommitFile: setSelectedCommitFilePath,
     selectedFilePath,
     selectFile: (path: string, staged?: boolean, commitHash?: string) => {
       setSelectedFilePath(path)
@@ -208,6 +236,7 @@ export function useGitStore(data: GitData, initial?: GitStoreInitial) {
     selectedFileStaged,
     selectedFileHasChanges,
     selectedCommitHash,
+    open,
   }
 }
 

@@ -22,18 +22,19 @@ Discover with `app_list` and run with `app_call`:
 - `cloneRepo` — clone a repository in **bare** mode (as `<repo>.git`) so worktrees can be attached. Params: `url`, optional `name`.
 - `addWorktree` — add a worktree to a repository on a new branch named `<name>`. Checkout lands in `<base>.worktrees/<name>`. Params: `repo`, `name`, optional `base` (start point for the new branch; defaults to the repo's HEAD). The new worktree has no git identity: don't `git config user.*` there (a worktree of a shared bare clone shares its config with every other worktree of that repo, so this races). Commit with `GIT_AUTHOR_NAME`/`GIT_AUTHOR_EMAIL`/`GIT_COMMITTER_NAME`/`GIT_COMMITTER_EMAIL` set on the `git commit` invocation itself instead.
 - `removeWorktree` — remove a worktree and delete the branch it had checked out. Params: `repo`, `name`, `reason`, optional `force`. The removal is recorded, with who asked and why, as one line in `.worktree-removals.log` in the workspace folder.
-- `removeRepo` — remove a cloned repository and any worktrees attached to it. Params: `repo`.
+- `createRepo` — create a new, empty repository in the workspace folder. Params: `name` (used as given), optional `bare` (default `true`), optional `initialBranch` (default `main`). Refused when the name is taken, or when it shares a worktrees folder with an existing repository (`x` beside `x.git`).
+- `deleteRepo` — delete a repository and its worktrees from the workspace folder; remotes are only read. Params: `name`, optional `force`. Without `force: true` it is refused, listing each item, when a worktree or the working tree has uncommitted changes, a branch or detached worktree HEAD has commits no remote has, a remote cannot be reached to check, a step of the check itself fails, or a worktree is registered outside the workspace. Answers `removed`, `leftBehind` and `overridden`.
 
 ## Server actions
 
-- `git.listRepos`, `git.listWorktrees`, `git.pruneWorktrees`, `git.clone`, `git.cloneBare`, `git.addWorktree`, `git.removeWorktree`, `git.removeRepo` — the App view's surface; each takes the workspace address as `target` + `folder`.
+- `git.listRepos`, `git.listWorktrees`, `git.pruneWorktrees`, `git.clone`, `git.cloneBare`, `git.createRepo`, `git.addWorktree`, `git.removeWorktree`, `git.inspectRepoDeletion`, `git.deleteRepo` — the App view's surface; each takes the workspace address as `target` + `folder`. `git.inspectRepoDeletion` (param `repo`) answers what a delete would lose without changing anything; `git.deleteRepo` takes `repo` and `force`.
 - `gitui.*` — backing actions for the git client.
 
 All run over the configured terminal context, which may be local, WSL, SSH, or a `docker exec` into a running application instance.
 
 ## Layout
 
-For a bare repo `<base>.git`, worktrees are checked out beside it under `<base>.worktrees/<name>`. `removeRepo` removes both.
+For a bare repo `<base>.git`, worktrees are checked out beside it under `<base>.worktrees/<name>`. `deleteRepo` removes the repository and the worktrees git has registered for it there, and the worktrees folder once it is empty.
 
 ## Dependencies
 

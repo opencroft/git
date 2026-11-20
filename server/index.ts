@@ -12,19 +12,23 @@ import {
   type GitAddWorktreeParams,
   type GitCloneBareParams,
   type GitCloneParams,
+  type GitCreateRepoParams,
+  type GitDeleteRepoParams,
+  type GitInspectRepoParams,
   type GitListReposParams,
   type GitListWorktreesParams,
   type GitPruneWorktreesParams,
-  type GitRemoveRepoParams,
   type GitRemoveWorktreeParams,
   type GitWorkspaceRef,
   gitAddWorktree,
   gitClone,
   gitCloneBare,
+  gitCreateRepo,
+  gitDeleteRepo,
+  gitInspectRepoDeletion,
   gitListRepos,
   gitListWorktrees,
   gitPruneWorktrees,
-  gitRemoveRepo,
   gitRemoveWorktree,
 } from './git'
 import * as applyPatch from './gitui/apply-patch'
@@ -62,7 +66,9 @@ export const actions = {
   'git.cloneBare': (params: GitCloneBareParams) => gitCloneBare(params),
   'git.addWorktree': (params: GitAddWorktreeParams) => gitAddWorktree(params),
   'git.removeWorktree': (params: GitRemoveWorktreeParams) => gitRemoveWorktree(params),
-  'git.removeRepo': (params: GitRemoveRepoParams) => gitRemoveRepo(params),
+  'git.createRepo': (params: GitCreateRepoParams) => gitCreateRepo(params),
+  'git.inspectRepoDeletion': (params: GitInspectRepoParams) => gitInspectRepoDeletion(params),
+  'git.deleteRepo': (params: GitDeleteRepoParams) => gitDeleteRepo({ ...params, force: params.force === true }),
   ...Object.fromEntries(Object.entries(gitui).map(([name, fn]) => [`gitui.${name}`, fn])),
 }
 
@@ -167,8 +173,17 @@ export const apps: AppsExport = {
           // which is how the record tells a person's click from an agent's call.
           callerAgent: ctx.callerAgent,
         }),
-      removeRepo: (ctx: AppActionContext, params: Record<string, unknown>) =>
-        gitRemoveRepo({ ...wsOf(ctx), repo: str(params, 'repo') }),
+      createRepo: (ctx: AppActionContext, params: Record<string, unknown>) =>
+        gitCreateRepo({
+          ...wsOf(ctx),
+          name: str(params, 'name'),
+          // Only an explicit false asks for a working tree; anything else gets the bare default.
+          bare: params.bare !== false,
+          initialBranch: optStr(params, 'initialBranch'),
+        }),
+      // `force` must be exactly true, for the reason `apply` must be above.
+      deleteRepo: (ctx: AppActionContext, params: Record<string, unknown>) =>
+        gitDeleteRepo({ ...wsOf(ctx), repo: str(params, 'name'), force: params.force === true }),
     },
   },
 }

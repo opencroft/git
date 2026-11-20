@@ -1,3 +1,4 @@
+import { usePublishSelection } from '@opencroft/client/chat'
 import { useCallback, useEffect, useState } from 'react'
 
 import { BranchHeader } from './components/branch-header'
@@ -8,17 +9,25 @@ import { CommitTable } from './components/commit-table'
 import { GitDialogProvider } from './components/git-dialogs'
 import { GitSidebar } from './components/git-sidebar'
 import type { TerminalFolder } from './components/terminal-folder-dialog'
+import { type CodeSelection, CodeSelectionProvider } from './lib/code-selection'
 import { GitProvider } from './lib/git-context'
 import { getGitData, trustRepo } from './lib/git-data'
 import { setRepoContext } from './lib/rpc'
+import { gitSelection } from './lib/selection'
 import type { GitData } from './lib/types'
 import { useGitStore } from './lib/use-git-store'
 import { Button, ResizableHandle, ResizablePanel, ResizablePanelGroup, TooltipProvider } from './ui'
 
 const DUBIOUS_OWNERSHIP = /dubious ownership in repository at '([^']+)'/
 
+/** Where a load of the repository read from, kept with what it read. */
+interface LoadedPlace {
+  folder: string
+  target: string
+}
+
 function GitClientBody({
-  workspace,
+  place,
   data,
   refresh,
   initialFilePath,
@@ -26,7 +35,7 @@ function GitClientBody({
   initialFileLine,
   onFileChange,
 }: {
-  workspace: string
+  place: LoadedPlace
   data: GitData
   refresh: () => Promise<void>
   initialFilePath?: string
@@ -34,57 +43,84 @@ function GitClientBody({
   initialFileLine?: number
   onFileChange?: (path: string | undefined) => void
 }) {
+  const workspace = place.folder
   const store = useGitStore(data, { filePath: initialFilePath, fileStaged: initialFileStaged })
 
   useEffect(() => {
     onFileChange?.(store.selectedFilePath)
   }, [store.selectedFilePath, onFileChange])
 
+  // The lines the reader has highlighted in the editor. Dropped when what is
+  // open changes -- lines from a file you have left are not context for the
+  // one you are looking at -- but NOT when the highlight itself collapses,
+  // which is what clicking into the composer does.
+  const [code, setCode] = useState<CodeSelection | null>(null)
+  const openKey = store.open ? JSON.stringify(store.open) : ''
+  // biome-ignore lint/correctness/useExhaustiveDependencies: runs when what is open changes, which is the point; it reads nothing of it
+  useEffect(() => {
+    setCode(null)
+  }, [openKey])
+
+  // A checkout reached through its own worktree handle, with no folder, is
+  // the terminal's working directory: its paths stay relative to it. Opened
+  // as a folder, the repository's root is where its paths start.
+  usePublishSelection(
+    gitSelection({ terminal: place.target, root: place.folder ? data.root : undefined }, store.open, code),
+  )
+
   return (
-    <TooltipProvider>
-      <GitProvider workspace={workspace} data={data} refresh={refresh}>
-        <GitDialogProvider>
-          <ResizablePanelGroup orientation='horizontal'>
-            <ResizablePanel defaultSize='20%' minSize='12%' maxSize='50%'>
-              <GitSidebar {...store} />
-            </ResizablePanel>
-            <ResizableHandle withHandle />
-            <ResizablePanel defaultSize='80%'>
-              {store.sidebarView === 'changes' ? (
-                <CommitPanel
-                  hasStaged={store.stagedFiles.length > 0}
-                  selectedFilePath={store.selectedFilePath}
-                  selectedFileStaged={store.selectedFileStaged}
-                  selectedFileHasChanges={store.selectedFileHasChanges}
-                  selectedCommitHash={store.selectedCommitHash}
-                  selectedFileLine={initialFileLine}
-                />
-              ) : (
-                <ResizablePanelGroup orientation='vertical'>
-                  <ResizablePanel defaultSize='65%'>
-                    <div className='flex h-full min-w-0 flex-col overflow-hidden'>
-                      <BranchHeader activeBranch={store.activeBranch} commitCount={store.visibleCommits.length} />
-                      <CommitTable
-                        commits={store.visibleCommits}
-                        graphData={store.graphData}
-                        headHash={store.activeBranch?.tipHash}
-                        headReachable={store.headReachable}
-                        selectedHash={store.selectedHash}
-                        onSelect={store.selectCommit}
+    // Lets the editor several levels down report a highlight without every
+    // component in between carrying a prop for it.
+    <CodeSelectionProvider onSelection={setCode}>
+      <TooltipProvider>
+        <GitProvider workspace={workspace} data={data} refresh={refresh}>
+          <GitDialogProvider>
+            <ResizablePanelGroup orientation='horizontal'>
+              <ResizablePanel defaultSize='20%' minSize='12%' maxSize='50%'>
+                <GitSidebar {...store} />
+              </ResizablePanel>
+              <ResizableHandle withHandle />
+              <ResizablePanel defaultSize='80%'>
+                {store.sidebarView === 'changes' ? (
+                  <CommitPanel
+                    hasStaged={store.stagedFiles.length > 0}
+                    selectedFilePath={store.selectedFilePath}
+                    selectedFileStaged={store.selectedFileStaged}
+                    selectedFileHasChanges={store.selectedFileHasChanges}
+                    selectedCommitHash={store.selectedCommitHash}
+                    selectedFileLine={initialFileLine}
+                  />
+                ) : (
+                  <ResizablePanelGroup orientation='vertical'>
+                    <ResizablePanel defaultSize='65%'>
+                      <div className='flex h-full min-w-0 flex-col overflow-hidden'>
+                        <BranchHeader activeBranch={store.activeBranch} commitCount={store.visibleCommits.length} />
+                        <CommitTable
+                          commits={store.visibleCommits}
+                          graphData={store.graphData}
+                          headHash={store.activeBranch?.tipHash}
+                          headReachable={store.headReachable}
+                          selectedHash={store.selectedHash}
+                          onSelect={store.selectCommit}
+                        />
+                      </div>
+                    </ResizablePanel>
+                    <ResizableHandle withHandle />
+                    <ResizablePanel defaultSize='35%'>
+                      <CommitDetails
+                        commit={store.selectedCommit}
+                        selectedPath={store.selectedCommitFilePath}
+                        onSelectPath={store.selectCommitFile}
                       />
-                    </div>
-                  </ResizablePanel>
-                  <ResizableHandle withHandle />
-                  <ResizablePanel defaultSize='35%'>
-                    <CommitDetails commit={store.selectedCommit} />
-                  </ResizablePanel>
-                </ResizablePanelGroup>
-              )}
-            </ResizablePanel>
-          </ResizablePanelGroup>
-        </GitDialogProvider>
-      </GitProvider>
-    </TooltipProvider>
+                    </ResizablePanel>
+                  </ResizablePanelGroup>
+                )}
+              </ResizablePanel>
+            </ResizablePanelGroup>
+          </GitDialogProvider>
+        </GitProvider>
+      </TooltipProvider>
+    </CodeSelectionProvider>
   )
 }
 
@@ -165,7 +201,10 @@ export function GitClient({
   initialFileLine,
   onFileChange,
 }: GitClientProps) {
-  const [data, setData] = useState<GitData | null>(null)
+  // What was read, with where it was read from: while another place loads,
+  // the last load stays on screen, and it must keep naming its own place.
+  const [loaded, setLoaded] = useState<{ data: GitData; place: LoadedPlace } | null>(null)
+  const data = loaded?.data ?? null
   const [loading, setLoading] = useState(false)
 
   useEffect(() => {
@@ -178,7 +217,7 @@ export function GitClient({
       const next = await getGitData({
         data: folder || target ? { workspace: folder || undefined, target: target || undefined } : undefined,
       })
-      setData(next)
+      setLoaded({ data: next, place: { folder, target } })
     } finally {
       setLoading(false)
     }
@@ -202,10 +241,13 @@ export function GitClient({
       <div className='min-h-0 flex-1'>
         {data?.error ? (
           <RepoErrorPanel error={data.error} target={target} onTrusted={refresh} />
-        ) : data ? (
+        ) : loaded ? (
+          // A new place starts a new body: what was open in the last one --
+          // its file, commit and highlight -- names nothing in this one.
           <GitClientBody
-            workspace={folder}
-            data={data}
+            key={JSON.stringify(loaded.place)}
+            place={loaded.place}
+            data={loaded.data}
             refresh={refresh}
             initialFilePath={initialFilePath}
             initialFileStaged={initialFileStaged}

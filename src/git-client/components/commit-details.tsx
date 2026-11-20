@@ -10,6 +10,9 @@ import { FileEntry } from './file-entry'
 
 interface CommitDetailsProps {
   commit: GitCommit | undefined
+  /** The file of the commit whose change is shown. */
+  selectedPath: string | undefined
+  onSelectPath: (path: string) => void
 }
 
 function formatDate(value: string): string {
@@ -19,11 +22,10 @@ function formatDate(value: string): string {
   })
 }
 
-export function CommitDetails({ commit }: CommitDetailsProps) {
+export function CommitDetails({ commit, selectedPath, onSelectPath }: CommitDetailsProps) {
   const { workspace } = useGit()
   const [changes, setChanges] = useState<FileChange[]>([])
   const [body, setBody] = useState('')
-  const [selectedPath, setSelectedPath] = useState<string>()
   const hash = commit?.hash
 
   useEffect(() => {
@@ -47,12 +49,6 @@ export function CommitDetails({ commit }: CommitDetailsProps) {
       active = false
     }
   }, [hash, workspace])
-
-  // Reset file selection when commit changes
-  // biome-ignore lint/correctness/useExhaustiveDependencies: runs when the commit changes, which is the point; it reads nothing of the commit
-  useEffect(() => {
-    setSelectedPath(undefined)
-  }, [hash])
 
   const diffFetcher = useCallback(() => {
     if (!hash || !selectedPath) throw new Error('No file selected')
@@ -90,7 +86,7 @@ export function CommitDetails({ commit }: CommitDetailsProps) {
                   file={file}
                   selected={selectedPath === file.path}
                   flat
-                  onSelect={() => setSelectedPath(file.path)}
+                  onSelect={() => onSelectPath(file.path)}
                 />
               ))}
               {changes.length === 0 && (

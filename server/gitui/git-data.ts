@@ -158,7 +158,7 @@ export const getGitData = action(
   (input: { workspace?: string; target?: string } | undefined) => input,
   async ({ data }): Promise<GitData> => {
     try {
-      const { run } = await openRepo(data ?? {})
+      const { root, run } = await openRepo(data ?? {})
 
       const remoteUrls = parseRemoteList(await run(['remote', '-v']))
 
@@ -193,6 +193,7 @@ export const getGitData = action(
       }
 
       return {
+        root,
         files,
         commits,
         branches: parseBranches(await run(['for-each-ref', 'refs/heads', `--format=${BRANCH_FORMAT}`])),

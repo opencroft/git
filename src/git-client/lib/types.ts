@@ -94,6 +94,8 @@ export interface GitData {
   changedFiles: FileChange[]
   stagedFiles: FileChange[]
   files: string[]
+  /** The repository's top-level folder on the machine git ran on, which every path above is relative to. */
+  root?: string
   /** Set when the repo failed to open (bad workspace/target); other fields are empty defaults. */
   error?: string
 }

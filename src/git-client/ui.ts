@@ -1,6 +1,14 @@
 // The design-kit components the git client draws with, from the host's `ui`
 // module. Listed by name so this file says what the client depends on.
 export {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
   Badge,
   Button,
   Checkbox,
